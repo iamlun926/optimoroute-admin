@@ -11,27 +11,38 @@ app.secret_key = 'optimoroute-secret-key'
 API_KEY = os.environ.get("OPTIMOROUTE_API_KEY", "3076b5802ed7da0089dc4306e185913dLYghmIacS1A")
 BASE_URL = os.environ.get("OPTIMOROUTE_BASE_URL", "https://api.optimoroute.com/v1")
 
-# Configurable endpoints
+# Optimoroute API endpoints (from official docs)
 ENDPOINTS = {
-    "routes": os.environ.get("OPTIMOROUTE_ROUTES_ENDPOINT", "/routes"),
-    "drivers": os.environ.get("OPTIMOROUTE_DRIVERS_ENDPOINT", "/drivers"),
-    "orders": os.environ.get("OPTIMOROUTE_ORDERS_ENDPOINT", "/orders"),
-    "create_order": os.environ.get("OPTIMOROUTE_CREATE_ENDPOINT", "/orders"),
+    "create_order": "/create_order",
+    "create_or_update_orders": "/create_or_update_orders",
+    "get_orders": "/get_orders",
+    "delete_order": "/delete_order",
+    "delete_orders": "/delete_orders",
+    "delete_all_orders": "/delete_all_orders",
+    "get_routes": "/get_routes",
+    "get_scheduling_info": "/get_scheduling_info",
 }
 
 
-def optimoroute_request(method, endpoint, data=None):
+def optimoroute_request(method, endpoint, data=None, params=None):
     """Make API request to Optimoroute."""
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
     url = f"{BASE_URL}{endpoint}"
+    
+    # Add API key as query param for GET requests
+    if method == "GET" and params:
+        params["key"] = API_KEY
+    elif method in ["POST", "PUT", "DELETE"]:
+        params = {"key": API_KEY}
+    
     try:
-        response = requests.request(method, url, headers=headers, json=data, timeout=30)
+        response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30)
         return response.json(), response.status_code
     except requests.exceptions.ConnectionError:
-        return {"error": f"Cannot connect to {url}. Check BASE_URL configuration."}, 500
+        return {"error": f"Cannot connect to {url}"}, 500
     except Exception as e:
         return {"error": str(e)}, 500
 
@@ -39,38 +50,33 @@ def optimoroute_request(method, endpoint, data=None):
 @app.route("/")
 def index():
     """Dashboard."""
-    routes_res, _ = optimoroute_request("GET", ENDPOINTS["routes"])
-    drivers_res, _ = optimoroute_request("GET", ENDPOINTS["drivers"])
-    orders_res, _ = optimoroute_request("GET", ENDPOINTS["orders"])
-    
     return render_template("index.html",
-                         routes=routes_res if isinstance(routes_res, list) else [],
-                         drivers=drivers_res if isinstance(drivers_res, list) else [],
-                         orders=orders_res if isinstance(orders_res, list) else [],
                          api_key=API_KEY[:20] + "...",
-                         base_url=BASE_URL)
+                         base_url=BASE_URL,
+                         endpoints=ENDPOINTS)
 
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
-    """Configure API endpoints."""
+    """Configure API settings."""
     config = {
+        "api_key_masked": API_KEY[:10] + "...",
         "base_url": BASE_URL,
-        "routes_endpoint": ENDPOINTS["routes"],
-        "drivers_endpoint": ENDPOINTS["drivers"],
-        "orders_endpoint": ENDPOINTS["orders"],
-        "create_endpoint": ENDPOINTS["create_order"],
     }
     
     if request.method == "POST":
-        config.update({
-            "base_url": request.form.get("base_url"),
-            "routes_endpoint": request.form.get("routes_endpoint"),
-            "drivers_endpoint": request.form.get("drivers_endpoint"),
-            "orders_endpoint": request.form.get("orders_endpoint"),
-            "create_endpoint": request.form.get("create_endpoint"),
-        })
-        flash("Settings updated! Test with the API Status page.", "success")
+        # Update API key
+        if request.form.get("api_key"):
+            os.environ["OPTIMOROUTE_API_KEY"] = request.form.get("api_key")
+            config["api_key_masked"] = "Updated"
+            flash("API key updated!", "success")
+        
+        # Update base URL
+        if request.form.get("base_url"):
+            os.environ["OPTIMOROUTE_BASE_URL"] = request.form.get("base_url")
+            config["base_url"] = request.form.get("base_url")
+            flash("Base URL updated!", "success")
+        
         return redirect(url_for("settings"))
     
     return render_template("settings.html", config=config)
@@ -81,11 +87,16 @@ def test_api():
     """Test API connectivity."""
     test_result = None
     if request.method == "POST":
-        endpoint = request.form.get("endpoint", "/orders")
+        endpoint = request.form.get("endpoint", "/get_routes")
         method = request.form.get("method", "GET")
+        date = request.form.get("date", "")
+        
+        params = {}
+        if date and endpoint == "/get_routes":
+            params["date"] = date
         
         if method == "GET":
-            res, status = optimoroute_request("GET", endpoint)
+            res, status = optimoroute_request("GET", endpoint, params=params)
         elif method == "POST":
             try:
                 data = json.loads(request.form.get("data", "{}"))
@@ -97,68 +108,106 @@ def test_api():
             
         test_result = {"response": res, "status": status, "endpoint": endpoint, "method": method}
     
-    return render_template("test_api.html", result=test_result)
+    return render_template("test_api.html", result=test_result, endpoints=ENDPOINTS)
 
 
 @app.route("/routes")
 def routes():
-    """List all routes."""
-    res, status = optimoroute_request("GET", ENDPOINTS["routes"])
-    return render_template("routes.html", routes=res if isinstance(res, list) else [], error=res if status != 200 else None)
+    """List routes for a date."""
+    date = request.args.get("date")
+    if not date:
+        date = pd.Timestamp.now().strftime("%Y-%m-%d")
+    
+    res, status = optimoroute_request("GET", ENDPOINTS["get_routes"], params={"date": date})
+    
+    if isinstance(res, dict) and res.get("success"):
+        routes_data = res.get("routes", [])
+    else:
+        routes_data = []
+        flash(f"Error fetching routes: {res.get('message', 'Unknown error')}", "error")
+    
+    return render_template("routes.html", routes=routes_data, date=date, endpoints=ENDPOINTS)
 
 
-@app.route("/routes/<route_id>")
-def route_detail(route_id):
-    """Route details."""
-    res, status = optimoroute_request("GET", f"{ENDPOINTS['routes']}/{route_id}")
+@app.route("/routes/<order_id>")
+def route_detail(order_id):
+    """Get scheduling info for an order."""
+    res, status = optimoroute_request("GET", ENDPOINTS["get_scheduling_info"], params={"id": order_id})
+    
     if status == 200:
-        return render_template("route_detail.html", route=res)
+        return render_template("route_detail.html", scheduling=res)
     return render_template("error.html", error=res)
-
-
-@app.route("/drivers")
-def drivers():
-    """List all drivers."""
-    res, status = optimoroute_request("GET", ENDPOINTS["drivers"])
-    return render_template("drivers.html", drivers=res if isinstance(res, list) else [], error=res if status != 200 else None)
 
 
 @app.route("/orders")
 def orders():
-    """List all orders."""
-    res, status = optimoroute_request("GET", ENDPOINTS["orders"])
-    return render_template("orders.html", orders=res if isinstance(res, list) else [], error=res if status != 200 else None)
+    """List orders."""
+    # Try get_orders endpoint
+    res, status = optimoroute_request("GET", ENDPOINTS["get_orders"], params={"orderNo": ""})
+    
+    orders_data = []
+    if isinstance(res, dict) and res.get("success"):
+        for o in res.get("orders", []):
+            if o.get("success") and o.get("data"):
+                orders_data.append(o["data"])
+    
+    return render_template("orders.html", orders=orders_data, endpoints=ENDPOINTS)
 
 
 @app.route("/orders/create", methods=["GET", "POST"])
 def create_order():
-    """Create new order."""
+    """Create or update a single order."""
     if request.method == "POST":
-        order_data = {
-            "address": request.form.get("address"),
-            "customer_name": request.form.get("customer_name"),
-            "customer_phone": request.form.get("customer_phone"),
-            "latitude": request.form.get("latitude"),
-            "longitude": request.form.get("longitude"),
-            "notes": request.form.get("notes"),
-            "pickup_time": request.form.get("pickup_time"),
-            "delivery_time": request.form.get("delivery_time"),
+        # Build order data from form
+        location_data = {
+            "address": request.form.get("address", ""),
+            "locationName": request.form.get("location_name", ""),
+            "latitude": request.form.get("latitude") or None,
+            "longitude": request.form.get("longitude") or None,
         }
+        # Remove empty location fields
+        location_data = {k: v for k, v in location_data.items() if v}
+        
+        order_data = {
+            "operation": request.form.get("operation", "CREATE"),
+            "orderNo": request.form.get("order_no", ""),
+            "type": request.form.get("order_type", "D"),
+            "date": request.form.get("date", ""),
+            "location": location_data,
+            "duration": int(request.form.get("duration", 15)),
+            "notes": request.form.get("notes", ""),
+            "phone": request.form.get("phone", ""),
+            "email": request.form.get("email", ""),
+        }
+        
+        # Add time window if provided
+        tw_from = request.form.get("tw_from", "")
+        tw_to = request.form.get("tw_to", "")
+        if tw_from and tw_to:
+            order_data["timeWindows"] = [{"twFrom": tw_from, "twTo": tw_to}]
+        
+        # Add load if provided
+        load1 = request.form.get("load1", "")
+        if load1:
+            order_data["load1"] = float(load1)
+        
         # Remove empty fields
-        order_data = {k: v for k, v in order_data.items() if v}
+        order_data = {k: v for k, v in order_data.items() if v and v != {}}
         
         res, status = optimoroute_request("POST", ENDPOINTS["create_order"], data=order_data)
-        if status in [200, 201]:
-            flash("Order created successfully!", "success")
+        
+        if isinstance(res, dict) and res.get("success"):
+            flash(f"Order created/updated successfully! ID: {res.get('id', 'N/A')}", "success")
             return redirect(url_for("orders"))
-        return render_template("error.html", error=res)
+        else:
+            return render_template("error.html", error=res.get("message", json.dumps(res)))
+    
     return render_template("create_order.html")
 
 
-@app.route("/batch-upload", methods=["GET", "POST"])
-def batch_upload():
-    """Batch upload orders from XLSX file."""
-    upload_result = None
+@app.route("/orders/batch-create", methods=["GET", "POST"])
+def batch_create_orders():
+    """Create or update multiple orders."""
     if request.method == "POST":
         if 'file' not in request.files:
             return render_template("error.html", error="No file uploaded")
@@ -170,52 +219,133 @@ def batch_upload():
         if file and file.filename.endswith(('.xlsx', '.xls')):
             try:
                 df = pd.read_excel(file)
-                orders_data = df.to_dict('records')
+                df = df.fillna('')
                 
-                # Preview first 5 orders
-                preview = orders_data[:5]
-                upload_result = {
-                    "total": len(orders_data),
-                    "preview": preview,
-                    "columns": list(df.columns),
-                }
-                
-                # Actually upload if confirmed
-                if request.form.get("confirm") == "true":
-                    success_count = 0
-                    errors = []
-                    for i, order in enumerate(orders_data):
-                        try:
-                            res, status = optimoroute_request("POST", ENDPOINTS["create_order"], data=order)
-                            if status in [200, 201]:
-                                success_count += 1
-                            else:
-                                errors.append(f"Row {i+1}: {res}")
-                        except Exception as e:
-                            errors.append(f"Row {i+1}: {str(e)}")
+                orders = []
+                for _, row in df.iterrows():
+                    order = {"operation": "SYNC"}
                     
-                    upload_result["success_count"] = success_count
-                    upload_result["errors"] = errors[:10]  # Show first 10 errors
-                    upload_result["confirmed"] = True
+                    # Map Excel columns to API fields
+                    field_mapping = {
+                        'orderNo': 'order_no',
+                        'type': 'order_type',
+                        'date': 'date',
+                        'address': 'address',
+                        'locationName': 'location_name',
+                        'latitude': 'latitude',
+                        'longitude': 'longitude',
+                        'duration': 'duration',
+                        'notes': 'notes',
+                        'phone': 'phone',
+                        'email': 'email',
+                        'twFrom': 'tw_from',
+                        'twTo': 'tw_to',
+                        'load1': 'load1',
+                        'priority': 'priority',
+                    }
+                    
+                    for api_field, excel_field in field_mapping.items():
+                        if excel_field in row and row[excel_field]:
+                            if api_field in ['latitude', 'longitude', 'duration', 'load1']:
+                                order[api_field] = float(row[excel_field]) if row[excel_field] else None
+                            else:
+                                order[api_field] = row[excel_field]
+                    
+                    # Build location object
+                    if 'address' in row or 'latitude' in row:
+                        location = {}
+                        if row.get('address'):
+                            location['address'] = row['address']
+                        if row.get('location_name'):
+                            location['locationName'] = row['location_name']
+                        if row.get('latitude'):
+                            location['latitude'] = float(row['latitude'])
+                        if row.get('longitude'):
+                            location['longitude'] = float(row['longitude'])
+                        if location:
+                            order['location'] = location
+                    
+                    # Add time window
+                    if row.get('tw_from') and row.get('tw_to'):
+                        order['timeWindows'] = [{"twFrom": str(row['tw_from']), "twTo": str(row['tw_to'])}]
+                    
+                    orders.append(order)
+                
+                # Send batch request
+                res, status = optimoroute_request("POST", ENDPOINTS["create_or_update_orders"], data={"orders": orders})
+                
+                if isinstance(res, dict):
+                    success_count = sum(1 for o in res.get("orders", []) if o.get("success"))
+                    errors = [o for o in res.get("orders", []) if not o.get("success")]
+                    
+                    result = {
+                        "total": len(orders),
+                        "success_count": success_count,
+                        "errors": errors[:10],
+                    }
+                    return render_template("batch_result.html", result=result)
+                else:
+                    return render_template("error.html", error=str(res))
                     
             except Exception as e:
-                return render_template("error.html", error=f"Error reading file: {str(e)}")
+                return render_template("error.html", error=f"Error processing file: {str(e)}")
         else:
             return render_template("error.html", error="Please upload an XLSX file")
     
-    return render_template("batch_upload.html", result=upload_result)
+    return render_template("batch_create.html")
+
+
+@app.route("/orders/delete", methods=["GET", "POST"])
+def delete_orders():
+    """Delete orders."""
+    delete_result = None
+    if request.method == "POST":
+        order_ids = request.form.get("order_ids", "").strip()
+        if order_ids:
+            order_nos = [o.strip() for o in order_ids.split(",") if o.strip()]
+            
+            orders = [{"orderNo": no} for no in order_nos]
+            res, status = optimoroute_request("POST", ENDPOINTS["delete_orders"], data={"orders": orders})
+            
+            if isinstance(res, dict):
+                success_count = sum(1 for o in res.get("orders", []) if o.get("success"))
+                delete_result = {
+                    "total": len(orders),
+                    "success_count": success_count,
+                    "results": res.get("orders", []),
+                }
+    
+    return render_template("delete_orders.html", result=delete_result)
+
+
+@app.route("/orders/delete-all", methods=["POST"])
+def delete_all_orders():
+    """Delete all orders for a date."""
+    date = request.form.get("date", "")
+    
+    res, status = optimoroute_request("POST", ENDPOINTS["delete_all_orders"], data={"date": date} if date else {})
+    
+    if isinstance(res, dict) and res.get("success"):
+        flash(f"All orders for {date or 'all dates'} deleted successfully!", "success")
+    else:
+        flash(f"Error: {res.get('message', 'Unknown error')}", "error")
+    
+    return redirect(url_for("orders"))
 
 
 @app.route("/api/status")
 def api_status():
     """Check API connectivity."""
-    res, status = optimoroute_request("GET", ENDPOINTS["routes"])
+    # Test with get_routes
+    date = pd.Timestamp.now().strftime("%Y-%m-%d")
+    res, status = optimoroute_request("GET", ENDPOINTS["get_routes"], params={"date": date})
+    
     return jsonify({
         "status": "connected" if status == 200 else "error",
         "api_key_configured": bool(API_KEY),
         "base_url": BASE_URL,
         "endpoints": ENDPOINTS,
-        "response": res,
+        "test_response": res,
         "http_status": status
     })
 
