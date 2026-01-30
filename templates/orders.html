@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders - Optimoroute Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
+        .sidebar { width: 250px; background: #1a1a2e; color: #fff; min-height: 100vh; padding: 20px; position: fixed; }
+        .sidebar h1 { font-size: 1.5rem; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 1px solid #333; }
+        .sidebar nav a { display: block; color: #aaa; padding: 12px 15px; text-decoration: none; border-radius: 8px; margin-bottom: 5px; }
+        .sidebar nav a:hover, .sidebar nav a.active { background: #16213e; color: #fff; }
+        .sidebar nav a:hover { background: #0f3460; }
+        .main { margin-left: 250px; padding: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h2 { font-size: 1.8rem; color: #1a1a2e; }
+        .btn { padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 0.9rem; cursor: pointer; border: none; display: inline-block; }
+        .btn-primary { background: #0f3460; color: #fff; }
+        .btn-primary:hover { background: #16213e; }
+        .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden; }
+        .card-header { padding: 20px 25px; border-bottom: 1px solid #eee; }
+        .card-header h3 { font-size: 1.1rem; color: #1a1a2e; }
+        .card-body { padding: 25px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { color: #666; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; }
+        td { color: #333; }
+        tr:hover td { background: #f9f9f9; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .badge-green { background: #d4edda; color: #155724; }
+        .badge-yellow { background: #fff3cd; color: #856404; }
+        .badge-red { background: #f8d7da; color: #721c24; }
+        .badge-blue { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h1>📦 Optimoroute</h1>
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="/routes">Routes</a>
+            <a href="/drivers">Drivers</a>
+            <a href="/orders" class="active">Orders</a>
+            <a href="/orders/create">Create Order</a>
+        </nav>
+    </div>
+    <div class="main">
+        <div class="header">
+            <h2>Orders</h2>
+            <a href="/orders/create" class="btn btn-primary">+ New Order</a>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>All Orders ({{ orders|length }})</h3>
+            </div>
+            <div class="card-body">
+                {% if orders %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Customer</th>
+                            <th>Address</th>
+                            <th>Phone</th>
+                            <th>Time Window</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in orders %}
+                        <tr>
+                            <td>{{ order.get('id', order.get('order_id', 'N/A')) }}</td>
+                            <td>{{ order.get('customer_name', 'N/A') }}</td>
+                            <td>{{ order.get('address', 'N/A') }}</td>
+                            <td>{{ order.get('customer_phone', order.get('phone', 'N/A')) }}</td>
+                            <td>{{ order.get('delivery_time', order.get('time_window', 'N/A')) }}</td>
+                            <td>
+                                <span class="badge badge-{{ 'green' if order.get('status') == 'delivered' else ('yellow' if order.get('status') == 'pending' else 'blue') }}">
+                                    {{ order.get('status', 'pending') }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p style="color: #888; text-align: center; padding: 40px;">No orders found</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
