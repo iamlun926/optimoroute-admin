@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Route Details - Optimoroute Admin</title>
+    <title>Scheduling Info - Optimoroute Admin</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
@@ -23,11 +23,9 @@
         .card-body { padding: 25px; }
         .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
         .info-item label { display: block; color: #666; font-size: 0.85rem; margin-bottom: 5px; }
-        .info-item span { font-size: 1.1rem; color: #1a1a2e; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-        th { color: #666; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; }
-        td { color: #333; }
+        .info-item span { font-size: 1.1rem; color: #1a1a2e; font-weight: 500; }
+        .success-banner { background: #d4edda; color: #155724; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .error-banner { background: #f8d7da; color: #721c24; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
         .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
         .badge-green { background: #d4edda; color: #155724; }
         .badge-yellow { background: #fff3cd; color: #856404; }
@@ -51,68 +49,56 @@
     <div class="main">
         <div class="header">
             <div>
-                <a href="/routes" class="back-link">← Back to Routes</a>
-                <h2 style="margin-top: 10px;">Route Details</h2>
+                <a href="/orders" class="back-link">← Back to Orders</a>
+                <h2 style="margin-top: 10px;">Scheduling Information</h2>
             </div>
         </div>
         
+        {% if scheduling.get('orderScheduled') %}
+        <div class="success-banner">
+            ✅ This order is scheduled on a route
+        </div>
+        {% else %}
+        <div class="error-banner">
+            ⏳ This order is NOT scheduled yet
+        </div>
+        {% endif %}
+        
         <div class="card">
             <div class="card-header">
-                <h3>Route Info</h3>
+                <h3>Schedule Details</h3>
             </div>
             <div class="card-body">
                 <div class="info-grid">
                     <div class="info-item">
-                        <label>Route ID</label>
-                        <span>{{ route.get('id', route.get('route_id', 'N/A')) }}</span>
+                        <label>Driver Name</label>
+                        <span>{{ scheduling.get('driverName', 'N/A') }}</span>
                     </div>
                     <div class="info-item">
-                        <label>Name</label>
-                        <span>{{ route.get('name', 'Unnamed') }}</span>
+                        <label>Driver Serial</label>
+                        <span>{{ scheduling.get('driverSerial', 'N/A') }}</span>
                     </div>
                     <div class="info-item">
-                        <label>Status</label>
-                        <span class="badge badge-green">{{ route.get('status', 'active') }}</span>
+                        <label>Vehicle</label>
+                        <span>{{ scheduling.get('vehicleLabel', 'N/A') }} ({{ scheduling.get('vehicleRegistration', 'N/A') }})</span>
                     </div>
                     <div class="info-item">
-                        <label>Driver</label>
-                        <span>{{ route.get('driver_name', route.get('driver', 'Unassigned')) }}</span>
+                        <label>Stop Number</label>
+                        <span>{{ scheduling.get('stopNumber', 'N/A') }}</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Scheduled Time</label>
+                        <span>{{ scheduling.get('scheduledAt', 'N/A') }}</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Scheduled Date/Time</label>
+                        <span>{{ scheduling.get('scheduledAtDt', 'N/A') }}</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Arrival Time</label>
+                        <span>{{ scheduling.get('arrivalTimeDt', 'N/A') }}</span>
                     </div>
                 </div>
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">
-                <h3>Stops ({{ route.get('stops', [])|length }})</h3>
-            </div>
-            <div class="card-body">
-                {% if route.get('stops') %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Address</th>
-                            <th>Customer</th>
-                            <th>Time Window</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for stop in route.get('stops', []) %}
-                        <tr>
-                            <td>{{ loop.index }}</td>
-                            <td>{{ stop.get('address', 'N/A') }}</td>
-                            <td>{{ stop.get('customer_name', stop.get('customer', 'N/A')) }}</td>
-                            <td>{{ stop.get('time_window', stop.get('delivery_time', 'N/A')) }}</td>
-                            <td><span class="badge badge-yellow">{{ stop.get('status', 'pending') }}</span></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <p style="color: #888; text-align: center; padding: 40px;">No stops in this route</p>
-                {% endif %}
             </div>
         </div>
     </div>
