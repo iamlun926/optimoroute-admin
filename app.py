@@ -27,16 +27,14 @@ ENDPOINTS = {
 def optimoroute_request(method, endpoint, data=None, params=None):
     """Make API request to Optimoroute."""
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
     url = f"{BASE_URL}{endpoint}"
     
-    # Add API key as query param for GET requests
-    if method == "GET" and params:
-        params["key"] = API_KEY
-    elif method in ["POST", "PUT", "DELETE"]:
-        params = {"key": API_KEY}
+    # Optimoroute API uses key as query parameter
+    if params is None:
+        params = {}
+    params["key"] = API_KEY
     
     try:
         response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30)
@@ -165,6 +163,10 @@ def create_order():
             "latitude": request.form.get("latitude") or None,
             "longitude": request.form.get("longitude") or None,
         }
+        # Add geocoding options for addresses without lat/lon
+        if location_data.get("address") and not (location_data.get("latitude") or location_data.get("longitude")):
+            location_data["acceptMultipleResults"] = True
+            location_data["acceptPartialMatch"] = True
         # Remove empty location fields
         location_data = {k: v for k, v in location_data.items() if v}
         
@@ -262,6 +264,10 @@ def batch_create_orders():
                             location['latitude'] = float(row['latitude'])
                         if row.get('longitude'):
                             location['longitude'] = float(row['longitude'])
+                        # Add geocoding options for addresses without lat/lon
+                        if row.get('address') and not (row.get('latitude') and row.get('longitude')):
+                            location['acceptMultipleResults'] = True
+                            location['acceptPartialMatch'] = True
                         if location:
                             order['location'] = location
                     
